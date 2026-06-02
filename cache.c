@@ -46,21 +46,24 @@ void imprime_uso(char nome[]) {
 void memoria_cache(FILE *arq, int escrita, int tam_linha, int num_linhas, int assoc, int hit_time, char subs[], int tempo_mem) {
     int num_conjuntos = num_linhas / assoc;
     LinhaCache **cache = (LinhaCache**) malloc(num_conjuntos * sizeof(LinhaCache*));
-    char endereco[32], op;
+    char endereco[32];
+    char op;
     unsigned int num;
     int linha, tag, hit, i, j;
     int op_escrita = 0, op_leitura = 0, hit_total = 0;
     int hit_escrita = 0, hit_leitura = 0;
     int mem_escrita = 0, mem_leitura = 0;
     int tempo = 0;
-    int tempo_total = 0;
     int bits_offset = conta_bits(tam_linha);
     int bits_indice = conta_bits(num_conjuntos);
+
     srand(time(NULL));
+
     if(cache == NULL) {
         printf("Erro ao alocar memoria para a cache.\n");
         return;
     }
+
     for(i = 0; i < num_conjuntos; i++) {
         cache[i] = (LinhaCache*) malloc(assoc * sizeof(LinhaCache));
         if(cache[i] == NULL) {
@@ -76,15 +79,18 @@ void memoria_cache(FILE *arq, int escrita, int tam_linha, int num_linhas, int as
             cache[i][j].valido = 0;
         }
     }
+
     int total_ops = 0;
+
     while(fscanf(arq, "%31s %c", endereco, &op) != EOF) {
         total_ops++;
         if(op == 'W') op_escrita++;
         else op_leitura++;
-        tempo_total += hit_time;
+
         num = strtoul(endereco, NULL, 16);
         linha = (num >> bits_offset) & ((1 << bits_indice) - 1);
         tag = num >> (bits_offset + bits_indice);
+
         hit = 0;
         for(i = 0; i < assoc; i++) {
             if(cache[linha][i].valido && cache[linha][i].tag == tag) {
@@ -92,11 +98,12 @@ void memoria_cache(FILE *arq, int escrita, int tam_linha, int num_linhas, int as
                 hit_total++;
                 if(op == 'W') hit_escrita++;
                 else hit_leitura++;
+
                 cache[linha][i].lru = tempo++;
+
                 if(op == 'W') {
                     if(escrita == 0) {
                         mem_escrita++;
-                        tempo_total += tempo_mem;
                     } else {
                         cache[linha][i].dirty = 1;
                     }
@@ -104,15 +111,15 @@ void memoria_cache(FILE *arq, int escrita, int tam_linha, int num_linhas, int as
                 break;
             }
         }
+
         if(hit == 0) {
             if(op == 'W' && escrita == 0) {
                 mem_escrita++;
-                tempo_total += tempo_mem;
                 continue;
             }
 
             mem_leitura++;
-            tempo_total += tempo_mem;
+
             int pos = -1;
             for(i = 0; i < assoc; i++) {
                 if(cache[linha][i].valido == 0) {
@@ -120,6 +127,7 @@ void memoria_cache(FILE *arq, int escrita, int tam_linha, int num_linhas, int as
                     break;
                 }
             }
+
             if(pos == -1) {
                 if(compara_texto(subs, "Aleatoria")) {
                     pos = rand() % assoc;
@@ -135,51 +143,58 @@ void memoria_cache(FILE *arq, int escrita, int tam_linha, int num_linhas, int as
                 }
                 if(escrita == 1 && cache[linha][pos].dirty) {
                     mem_escrita++;
-                    tempo_total += tempo_mem;
                 }
             }
+
             cache[linha][pos].valido = 1;
             cache[linha][pos].tag = tag;
             cache[linha][pos].lru = tempo++;
             cache[linha][pos].dirty = 0;
+
             if(op == 'W') {
                 cache[linha][pos].dirty = 1;
             }
         }
     }
+
     if(escrita == 1) {
         for(i = 0; i < num_conjuntos; i++) {
             for(j = 0; j < assoc; j++) {
                 if(cache[i][j].valido && cache[i][j].dirty) {
                     mem_escrita++;
-                    tempo_total += tempo_mem;
                 }
             }
         }
     }
-    float taxa_hit_leitura = op_leitura > 0 ? (float)hit_leitura / op_leitura * 100 : 0;
-    float taxa_hit_escrita = op_escrita > 0 ? (float)hit_escrita / op_escrita * 100 : 0;
-    float taxa_hit_global = total_ops > 0 ? (float)hit_total / total_ops * 100 : 0;
-    float tempo_acesso = total_ops > 0 ? hit_time + (1 - (float)hit_total / total_ops) * tempo_mem : 0;
+
+    float hr_leitura = (op_leitura > 0) ? (float)hit_leitura / op_leitura * 100.0f : 0.0f;
+    float hr_escrita = (op_escrita > 0) ? (float)hit_escrita / op_escrita * 100.0f : 0.0f;
+    float hr_global = (total_ops > 0) ? (float)hit_total / total_ops * 100.0f : 0.0f;
+    float miss_rate = (total_ops > 0) ? 1.0f - (float)hit_total / total_ops : 1.0f;
+    float tempo_acesso = hit_time + miss_rate * tempo_mem;
+
     printf("\nINFORMACOES DE ENTRADA -----------------------\n");
-    printf("Politica de Escrita: %s.\n", escrita==1 ? "Write-Back" : "Write-Through");
+    printf("Politica de Escrita: %s.\n", escrita == 1 ? "Write-Back" : "Write-Through");
     printf("Tamanho da Linha: %d.\n", tam_linha);
     printf("Numero de Linhas: %d.\n", num_linhas);
     printf("Associatividade por Conjunto: %d.\n", assoc);
     printf("Tempo de Acesso (Hit): %d.\n", hit_time);
     printf("Politica de Substituicao: %s.\n", subs);
     printf("Tempo de Memoria: %d.\n\n", tempo_mem);
+
     printf("INFORMACOES DO ARQUIVO -----------------------\n");
     printf("Escritas: %d.\n", op_escrita);
     printf("Leituras: %d.\n", op_leitura);
     printf("Total: %d.\n\n", total_ops);
+
     printf("INFORMACOES DA SIMULACAO -----------------------\n");
     printf("Memoria Principal Leitura: %d.\n", mem_leitura);
     printf("Memoria Principal Escrita: %d.\n", mem_escrita);
-    printf("Hit Rate Leitura: %.4f%% (%d)\n", taxa_hit_leitura, hit_leitura);
-    printf("Hit Rate Escrita: %.4f%% (%d)\n", taxa_hit_escrita, hit_escrita);
-    printf("Hit Rate Global: %.4f%% (%d)\n", taxa_hit_global, hit_total);
+    printf("Hit Rate Leitura: %.4f%% (%d)\n", hr_leitura, hit_leitura);
+    printf("Hit Rate Escrita: %.4f%% (%d)\n", hr_escrita, hit_escrita);
+    printf("Hit Rate Global: %.4f%% (%d)\n", hr_global, hit_total);
     printf("Tempo Medio de Acesso: %.4f ns\n", tempo_acesso);
+
     for(i = 0; i < num_conjuntos; i++) free(cache[i]);
     free(cache);
 }
